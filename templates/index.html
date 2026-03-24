@@ -73,6 +73,12 @@
                     <button class="pl-tab pl-tab-add" onclick="createPlaylistPrompt()">＋</button>
                 </div>
 
+                <!-- Search Bar -->
+                <div class="search-bar">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" id="searchInput" placeholder="Search songs..." oninput="filterSongs(this.value)" autocomplete="off">
+                </div>
+
                 <!-- Song List -->
                 <p class="section-title" id="sectionTitle">Your tracks</p>
 
@@ -513,6 +519,22 @@
             }
         }
 
+        // ── Search / filter ──────────────────────────────────────────────
+        function filterSongs(query) {
+            const q = query.toLowerCase().trim();
+            document.querySelectorAll('.song-item').forEach(el => {
+                if (!q) {
+                    // If in a playlist view, don't show songs hidden by playlist filter
+                    if (activePlaylistId === 'all') el.style.display = '';
+                    return;
+                }
+                const title = (el.dataset.title || '').toLowerCase();
+                const artist = (el.dataset.artist || '').toLowerCase();
+                const match = title.includes(q) || artist.includes(q);
+                el.style.display = match ? '' : 'none';
+            });
+        }
+
         // ── Keyboard shortcuts ──────────────────────────────────────────
         document.addEventListener('keydown', (e) => {
             if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
@@ -520,6 +542,10 @@
             if (e.key === 'ArrowLeft' || e.key === 'p') playPrev();
             if (e.key === 's') toggleShuffle();
             if (e.key === 'r') cycleRepeat();
+            if (e.key === '/' || e.key === 'f' && e.ctrlKey) {
+                e.preventDefault();
+                document.getElementById('searchInput').focus();
+            }
         });
     </script>
 </body>
