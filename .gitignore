@@ -1,0 +1,21 @@
+# Virtual environment
+venv/
+
+# Database (auto-created on first run)
+*.db
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

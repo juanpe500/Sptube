@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sptube — Spotify to YouTube</title>
+    <meta name="description" content="Import your Spotify tracks and play them on YouTube">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <div class="logo-icon">▶</div>
+                <span>Sptube - By JP</span>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main no-player">
+            <!-- Song List Panel -->
+            <div class="panel-songs">
+                <!-- Import Section -->
+                <div class="import-section">
+                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                        <button class="import-toggle" onclick="toggleImport()">
+                            <span>＋</span> Import Spotify Tracks
+                        </button>
+                        {% if songs %}
+                        <form action="/clear" method="post" style="margin:0" onsubmit="return confirm('Delete all tracks?')">
+                            <button type="submit" class="import-toggle" style="color:#e74c3c; border-color:rgba(231,76,60,0.3);">✕ Clear All</button>
+                        </form>
+                        {% endif %}
+                        {% if songs and pending == 0 %}
+                        {% set has_errors = songs|selectattr('status','equalto','error')|list|length > 0 %}
+                        {% if has_errors %}
+                        <form action="/retry" method="post" style="margin:0">
+                            <button type="submit" class="import-toggle" style="color:#ffc107; border-color:rgba(255,193,7,0.3);">↻ Retry Failed</button>
+                        </form>
+                        {% endif %}
+                        {% endif %}
+                    </div>
+                    <div class="import-form" id="importForm">
+                        <form action="/import" method="post">
+                            <textarea name="urls" placeholder="Paste Spotify track URLs here, one per line...&#10;&#10;https://open.spotify.com/track/6FY8Imjs6YSglIAqnbU9mM&#10;https://open.spotify.com/track/5jM3TXYc0jYFSJVNUFhfU8"></textarea>
+                            <button type="submit" class="btn-import">Import & Process</button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Processing Banner -->
+                {% if pending > 0 %}
+                <div class="processing-banner" id="processingBanner">
+                    <div class="spinner"></div>
+                    <span>Processing <strong>{{ pending }}</strong> track{{ 's' if pending != 1 }}...</span>
+                </div>
+                {% endif %}
+
+                <!-- Playlist Tabs -->
+                <div class="playlist-tabs" id="playlistTabs">
+                    <button class="pl-tab active" data-pl="all" onclick="switchPlaylist('all', this)">
+                        All Songs
+                        <span class="pl-tab-count" id="allCount">{{ songs|selectattr('status','equalto','scraped')|list|length }}</span>
+                    </button>
+                    {% for pl in playlists %}
+                    <button class="pl-tab" data-pl="{{ pl.id }}" onclick="switchPlaylist({{ pl.id }}, this)">
+                        {{ pl.name }}
+                        <span class="pl-tab-count">{{ pl.song_count }}</span>
+                        <span class="pl-tab-del" onclick="event.stopPropagation(); deletePlaylist({{ pl.id }}, this.parentElement)" title="Delete">✕</span>
+                    </button>
+                    {% endfor %}
+                    <button class="pl-tab pl-tab-add" onclick="createPlaylistPrompt()">＋</button>
+                </div>
+
+                <!-- Song List -->
+                <p class="section-title" id="sectionTitle">Your tracks</p>
+
+                {% if songs %}
+                <div class="song-list" id="songList">
+                    {% for song in songs %}
+                    <div class="song-item"
+                         data-id="{{ song.id }}"
+                         data-title="{{ song.title|default('', true)|e }}"
+                         data-artist="{{ song.artist|default('', true)|e }}"
+                         data-status="{{ song.status }}"
+                         onclick="playSong(this)">
+                        <div class="song-num">
+                            <span>{{ loop.index }}</span>
+                            <span class="song-play-icon">▶</span>
+                        </div>
+                        <div class="song-info">
+                            <div class="song-title">{{ song.title or 'Processing...' }}</div>
+                            <div class="song-artist">{{ song.artist or '' }}</div>
+                        </div>
+                        <button class="song-add-btn" onclick="event.stopPropagation(); showAddToPlaylist({{ song.id }})" title="Add to playlist">＋</button>
+                        <span class="song-status {{ song.status }}">{{ song.status }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="empty-state">
+                    <div class="empty-state-icon">🎵</div>
+                    <p>No tracks yet. Import some Spotify URLs to get started!</p>
+                </div>
+                {% endif %}
+            </div>
+        </main>
+    </div>
+
+    <!-- Add to playlist dropdown (hidden, positioned dynamically) -->
+    <div class="add-to-pl-dropdown" id="addToPlDropdown" style="display:none">
+        <div class="add-to-pl-title">Add to playlist</div>
+        <div class="add-to-pl-list" id="addToPlList"></div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-box">
+            <div class="spinner"></div>
+            <p>Searching YouTube...</p>
+        </div>
+    </div>
+
+    <!-- YouTube IFrame API -->
+    <script src="https://www.youtube.com/iframe_api"></script>
+    <script>
+        // ── Import form toggle ──────────────────────────────────────────
+        function toggleImport() {
+            document.getElementById('importForm').classList.toggle('open');
+        }
+
+        // ── Poll for updates ────────────────────────────────────────────
+        function pollSongs() {
+            fetch('/api/songs').then(r => r.json()).then(data => {
+                if (data.pending > 0) {
+                    const banner = document.getElementById('processingBanner');
+                    if (banner) banner.querySelector('strong').textContent = data.pending;
+                    data.songs.forEach(song => {
+                        const existing = document.querySelector(`.song-item[data-id="${song.id}"]`);
+                        if (existing && existing.dataset.status === 'pending' && song.status !== 'pending') {
+                            existing.dataset.status = song.status;
+                            existing.dataset.title = song.title || '';
+                            existing.dataset.artist = song.artist || '';
+                            existing.querySelector('.song-title').textContent = song.title || 'Processing...';
+                            existing.querySelector('.song-artist').textContent = song.artist || '';
+                            existing.querySelector('.song-status').textContent = song.status;
+                            existing.querySelector('.song-status').className = `song-status ${song.status}`;
+                            if (song.status === 'scraped' && activePlaylistId === 'all') {
+                                rebuildPlaylist();
+                            }
+                        }
+                    });
+                    setTimeout(pollSongs, 4000);
+                } else {
+                    const banner = document.getElementById('processingBanner');
+                    if (banner) banner.remove();
+                    rebuildPlaylist();
+                }
+            }).catch(() => setTimeout(pollSongs, 5000));
+        }
+        if ({{ pending }} > 0) setTimeout(pollSongs, 4000);
+
+        // ── Playback state ──────────────────────────────────────────────
+        let playlist = [];
+        let currentIndex = -1;
+        let ytPlayer = null;
+        let ytReady = false;
+        let activePlaylistId = 'all';
+
+        // Playback modes: 'sequential', 'shuffle', 'repeat-one', 'repeat-all'
+        let playMode = 'sequential';
+        let shuffleOrder = [];
+
+        function rebuildPlaylist() {
+            playlist = [];
+            if (activePlaylistId === 'all') {
+                document.querySelectorAll('.song-item[data-status="scraped"]').forEach(el => {
+                    playlist.push({ id: el.dataset.id, title: el.dataset.title, artist: el.dataset.artist, el: el });
+                });
+            }
+            // If shuffle active, rebuild shuffle order
+            if (playMode === 'shuffle') buildShuffleOrder();
+        }
+
+        rebuildPlaylist();
+
+        // ── YouTube IFrame API ──────────────────────────────────────────
+        function onYouTubeIframeAPIReady() {}
+
+        function createPlayer(videoId) {
+            const main = document.querySelector('.main');
+            main.classList.remove('no-player');
+
+            let panel = document.createElement('div');
+            panel.className = 'panel-player';
+            main.appendChild(panel);
+
+            const song = playlist[currentIndex];
+            panel.innerHTML = `
+                <div class="player-wrapper">
+                    <div class="now-playing-label" id="npLabel">Now Playing (${currentIndex + 1}/${playlist.length})</div>
+                    <div class="now-playing-title" id="npTitle">${escapeHtml(song.title)}</div>
+                    <div class="now-playing-artist" id="npArtist">${escapeHtml(song.artist)}</div>
+                    <div class="video-container" id="videoContainer">
+                        <div id="ytPlayerDiv"></div>
+                    </div>
+                    <div class="playback-modes">
+                        <button class="mode-btn" id="btnShuffle" onclick="toggleShuffle()" title="Shuffle">🔀</button>
+                        <button class="mode-btn" id="btnRepeat" onclick="cycleRepeat()" title="Repeat">🔁</button>
+                    </div>
+                    <div class="player-controls">
+                        <button class="ctrl-btn" id="btnPrev" onclick="playPrev()">⏮ Prev</button>
+                        <span class="track-counter" id="trackCounter">${currentIndex + 1} / ${playlist.length}</span>
+                        <button class="ctrl-btn" id="btnNext" onclick="playNext()">Next ⏭</button>
+                    </div>
+                </div>
+            `;
+
+            ytPlayer = new YT.Player('ytPlayerDiv', {
+                videoId: videoId,
+                host: 'https://www.youtube-nocookie.com',
+                playerVars: { autoplay: 1, iv_load_policy: 3, rel: 0, modestbranding: 1 },
+                events: {
+                    onReady: (e) => {
+                        ytReady = true;
+                        const iframe = document.querySelector('#videoContainer iframe');
+                        if (iframe) {
+                            iframe.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;border:none';
+                            iframe.setAttribute('allow', 'autoplay; encrypted-media');
+                        }
+                        e.target.playVideo();
+                    },
+                    onStateChange: (e) => {
+                        if (e.data === YT.PlayerState.ENDED) handleSongEnd();
+                    },
+                    onError: (e) => {
+                        console.log('YT Error:', e.data);
+                        if (currentIndex < playlist.length - 1) setTimeout(playNext, 1000);
+                    }
+                }
+            });
+
+            updateControls();
+            updateModeButtons();
+            updateActiveHighlight(song.el);
+        }
+
+        // ── What happens when a song ends ───────────────────────────────
+        function handleSongEnd() {
+            if (playMode === 'repeat-one') {
+                ytPlayer.seekTo(0);
+                ytPlayer.playVideo();
+            } else if (playMode === 'shuffle') {
+                const nextShuffleIdx = shuffleOrder.indexOf(currentIndex);
+                if (nextShuffleIdx < shuffleOrder.length - 1) {
+                    playByIndex(shuffleOrder[nextShuffleIdx + 1]);
+                } else if (playMode === 'shuffle') {
+                    // Reshuffle and play from start
+                    buildShuffleOrder();
+                    playByIndex(shuffleOrder[0]);
+                }
+            } else if (playMode === 'repeat-all') {
+                if (currentIndex < playlist.length - 1) playByIndex(currentIndex + 1);
+                else playByIndex(0); // loop back
+            } else {
+                // sequential
+                if (currentIndex < playlist.length - 1) playByIndex(currentIndex + 1);
+            }
+        }
+
+        // ── Shuffle logic ───────────────────────────────────────────────
+        function buildShuffleOrder() {
+            shuffleOrder = [...Array(playlist.length).keys()];
+            // Fisher-Yates shuffle
+            for (let i = shuffleOrder.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [shuffleOrder[i], shuffleOrder[j]] = [shuffleOrder[j], shuffleOrder[i]];
+            }
+        }
+
+        function toggleShuffle() {
+            if (playMode === 'shuffle') {
+                playMode = 'sequential';
+            } else {
+                playMode = 'shuffle';
+                buildShuffleOrder();
+            }
+            updateModeButtons();
+        }
+
+        function cycleRepeat() {
+            if (playMode === 'repeat-all') playMode = 'repeat-one';
+            else if (playMode === 'repeat-one') playMode = 'sequential';
+            else playMode = 'repeat-all';
+            updateModeButtons();
+        }
+
+        function updateModeButtons() {
+            const shuf = document.getElementById('btnShuffle');
+            const rep = document.getElementById('btnRepeat');
+            if (!shuf || !rep) return;
+            shuf.classList.toggle('active', playMode === 'shuffle');
+            rep.classList.remove('active', 'repeat-one');
+            if (playMode === 'repeat-all') rep.classList.add('active');
+            if (playMode === 'repeat-one') { rep.classList.add('active', 'repeat-one'); rep.textContent = '🔂'; }
+            else rep.textContent = '🔁';
+        }
+
+        // ── Play a song by index ────────────────────────────────────────
+        async function playByIndex(index) {
+            if (index < 0 || index >= playlist.length) return;
+            currentIndex = index;
+            const song = playlist[index];
+
+            const overlay = document.getElementById('loadingOverlay');
+            overlay.classList.add('visible');
+
+            try {
+                const query = `${song.title} ${song.artist}`;
+                const resp = await fetch(`/api/search-youtube?q=${encodeURIComponent(query)}&song_id=${song.id}`);
+                const data = await resp.json();
+                overlay.classList.remove('visible');
+
+                if (data.video_id) {
+                    if (!ytPlayer || !ytReady) {
+                        createPlayer(data.video_id);
+                    } else {
+                        ytPlayer.loadVideoById(data.video_id);
+                        updateNowPlaying(song);
+                        updateControls();
+                        updateActiveHighlight(song.el);
+                    }
+                } else if (currentIndex < playlist.length - 1) {
+                    setTimeout(() => playByIndex(currentIndex + 1), 500);
+                }
+            } catch (e) {
+                overlay.classList.remove('visible');
+                if (currentIndex < playlist.length - 1)
+                    setTimeout(() => playByIndex(currentIndex + 1), 500);
+            }
+        }
+
+        // ── UI helpers ──────────────────────────────────────────────────
+        function updateNowPlaying(song) {
+            const l = document.getElementById('npLabel');
+            const t = document.getElementById('npTitle');
+            const a = document.getElementById('npArtist');
+            if (l) l.textContent = `Now Playing (${currentIndex + 1}/${playlist.length})`;
+            if (t) t.textContent = song.title;
+            if (a) a.textContent = song.artist;
+        }
+
+        function updateControls() {
+            const p = document.getElementById('btnPrev');
+            const n = document.getElementById('btnNext');
+            const c = document.getElementById('trackCounter');
+            if (p) p.disabled = currentIndex <= 0;
+            if (n) n.disabled = currentIndex >= playlist.length - 1 && playMode !== 'repeat-all' && playMode !== 'shuffle';
+            if (c) c.textContent = `${currentIndex + 1} / ${playlist.length}`;
+        }
+
+        function updateActiveHighlight(el) {
+            document.querySelectorAll('.song-item').forEach(s => s.classList.remove('active'));
+            if (el) {
+                el.classList.add('active');
+                el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
+
+        function playSong(el) {
+            if (el.dataset.status !== 'scraped') return;
+            const idx = playlist.findIndex(s => s.id === el.dataset.id);
+            if (idx >= 0) playByIndex(idx);
+        }
+
+        function playNext() {
+            if (playMode === 'shuffle') {
+                const curPos = shuffleOrder.indexOf(currentIndex);
+                if (curPos < shuffleOrder.length - 1) playByIndex(shuffleOrder[curPos + 1]);
+                else { buildShuffleOrder(); playByIndex(shuffleOrder[0]); }
+            } else if (playMode === 'repeat-all' && currentIndex >= playlist.length - 1) {
+                playByIndex(0);
+            } else if (currentIndex < playlist.length - 1) {
+                playByIndex(currentIndex + 1);
+            }
+        }
+
+        function playPrev() {
+            if (currentIndex > 0) playByIndex(currentIndex - 1);
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ── Playlist management ─────────────────────────────────────────
+        let allPlaylists = {{ playlists | tojson }};
+
+        async function switchPlaylist(plId, tabEl) {
+            document.querySelectorAll('.pl-tab').forEach(t => t.classList.remove('active'));
+            tabEl.classList.add('active');
+            activePlaylistId = plId;
+
+            if (plId === 'all') {
+                // Show all songs (already in DOM)
+                document.querySelectorAll('.song-item').forEach(el => el.style.display = '');
+                rebuildPlaylist();
+                document.getElementById('sectionTitle').textContent = 'Your tracks';
+            } else {
+                // Fetch playlist songs and show only those
+                const resp = await fetch(`/api/playlists/${plId}/songs`);
+                const songs = await resp.json();
+                const ids = new Set(songs.map(s => String(s.id)));
+                document.querySelectorAll('.song-item').forEach(el => {
+                    el.style.display = ids.has(el.dataset.id) ? '' : 'none';
+                });
+                playlist = [];
+                songs.forEach(s => {
+                    const el = document.querySelector(`.song-item[data-id="${s.id}"]`);
+                    if (el && s.status === 'scraped') playlist.push({ id: String(s.id), title: s.title, artist: s.artist, el: el });
+                });
+                if (playMode === 'shuffle') buildShuffleOrder();
+                const tab = tabEl.childNodes[0].textContent.trim();
+                document.getElementById('sectionTitle').textContent = tab;
+            }
+        }
+
+        async function createPlaylistPrompt() {
+            const name = prompt('Playlist name:');
+            if (!name || !name.trim()) return;
+            const resp = await fetch('/api/playlists', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ name: name.trim() })
+            });
+            const data = await resp.json();
+            // Add tab
+            const tabs = document.getElementById('playlistTabs');
+            const addBtn = tabs.querySelector('.pl-tab-add');
+            const btn = document.createElement('button');
+            btn.className = 'pl-tab';
+            btn.dataset.pl = data.id;
+            btn.onclick = () => switchPlaylist(data.id, btn);
+            btn.innerHTML = `${escapeHtml(data.name)} <span class="pl-tab-count">0</span><span class="pl-tab-del" onclick="event.stopPropagation(); deletePlaylist(${data.id}, this.parentElement)" title="Delete">✕</span>`;
+            tabs.insertBefore(btn, addBtn);
+            allPlaylists.push({ id: data.id, name: data.name, song_count: 0 });
+        }
+
+        async function deletePlaylist(plId, tabEl) {
+            if (!confirm('Delete this playlist?')) return;
+            await fetch(`/api/playlists/${plId}`, { method: 'DELETE' });
+            tabEl.remove();
+            allPlaylists = allPlaylists.filter(p => p.id !== plId);
+            if (activePlaylistId == plId) {
+                const allTab = document.querySelector('.pl-tab[data-pl="all"]');
+                switchPlaylist('all', allTab);
+            }
+        }
+
+        // ── Add to playlist dropdown ────────────────────────────────────
+        let addToPlSongId = null;
+
+        function showAddToPlaylist(songId) {
+            addToPlSongId = songId;
+            const dd = document.getElementById('addToPlDropdown');
+            const list = document.getElementById('addToPlList');
+            list.innerHTML = '';
+
+            if (allPlaylists.length === 0) {
+                list.innerHTML = '<div style="padding:8px;color:var(--text-muted);font-size:0.8rem;">No playlists yet</div>';
+            } else {
+                allPlaylists.forEach(pl => {
+                    const item = document.createElement('div');
+                    item.className = 'add-to-pl-item';
+                    item.textContent = pl.name;
+                    item.onclick = () => addToPlaylist(pl.id, songId);
+                    list.appendChild(item);
+                });
+            }
+
+            // Position near the button
+            const btn = document.querySelector(`.song-item[data-id="${songId}"] .song-add-btn`);
+            if (btn) {
+                const rect = btn.getBoundingClientRect();
+                dd.style.top = (rect.bottom + 4) + 'px';
+                dd.style.left = rect.left + 'px';
+            }
+            dd.style.display = 'block';
+
+            // Close on outside click
+            setTimeout(() => {
+                document.addEventListener('click', closeAddToPlaylist, { once: true });
+            }, 10);
+        }
+
+        function closeAddToPlaylist() {
+            document.getElementById('addToPlDropdown').style.display = 'none';
+        }
+
+        async function addToPlaylist(plId, songId) {
+            await fetch(`/api/playlists/${plId}/songs`, {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ song_id: songId })
+            });
+            closeAddToPlaylist();
+            // Update count in tab
+            const tab = document.querySelector(`.pl-tab[data-pl="${plId}"]`);
+            if (tab) {
+                const cnt = tab.querySelector('.pl-tab-count');
+                if (cnt) cnt.textContent = parseInt(cnt.textContent || 0) + 1;
+            }
+        }
+
+        // ── Keyboard shortcuts ──────────────────────────────────────────
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+            if (e.key === 'ArrowRight' || e.key === 'n') playNext();
+            if (e.key === 'ArrowLeft' || e.key === 'p') playPrev();
+            if (e.key === 's') toggleShuffle();
+            if (e.key === 'r') cycleRepeat();
+        });
+    </script>
+</body>
+</html>
+
+
+<!-- # By JP -->
