@@ -2,6 +2,8 @@
 
 **Spotify to YouTube — Free Music Player**
 
+## 🚫 100% AD-FREE YouTube Playback — Always. No Premium. No Extensions. No Tricks.
+
 Import your Spotify track URLs and Sptube automatically finds them on YouTube, creating an auto-playing playlist with seamless song transitions. Runs as a local desktop app with **zero API keys** required.
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)
