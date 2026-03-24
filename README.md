@@ -12,6 +12,16 @@ Import your Spotify track URLs and Sptube automatically finds them on YouTube, c
 
 ---
 
+## 📸 Screenshots
+
+![Song list and import](static/preview.png)
+
+![Player with video](static/preview2.png)
+
+![Playlists and playback modes](static/preview3.png)
+
+---
+
 ## ✨ Features
 
 - **Spotify URL Import** — Paste one or multiple Spotify track URLs and Sptube scrapes the metadata (title + artist) automatically
@@ -41,7 +51,7 @@ Import your Spotify track URLs and Sptube automatically finds them on YouTube, c
 
 1. **Clone the repo:**
    ```bash
-   git clone https://github.com/juanpabloxk/Sptube.git
+   git clone https://github.com/juanpe500/Sptube.git
    cd Sptube
    ```
 
@@ -134,6 +144,10 @@ Sptube/
 - **No API keys required.** Everything works via web scraping.
 - The SQLite database (`sptube.db`) is created automatically on first run.
 - A 3-second delay between scrapes helps avoid being blocked.
+
+## ⭐ Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=juanpe500/Sptube&type=Date)](https://star-history.com/#juanpe500/Sptube&Date)
 
 ## 📄 License
 
