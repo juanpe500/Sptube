@@ -51,6 +51,15 @@ def _process_import():
     _import_lock.release()
 
 
+# Resume any pending imports from before a restart
+@app.on_event("startup")
+def resume_pending():
+    if db.get_pending_count() > 0 and _import_lock.acquire(blocking=False):
+        t = threading.Thread(target=_process_import, daemon=True)
+        t.start()
+        print(f"  [RESUME] Resuming {db.get_pending_count()} pending imports...")
+
+
 # ── Routes ─────────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
