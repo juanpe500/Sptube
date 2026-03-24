@@ -27,22 +27,24 @@
             <div class="panel-songs">
                 <!-- Import Section -->
                 <div class="import-section">
-                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                        <button class="import-toggle" onclick="toggleImport()">
-                            <span>＋</span> Import Spotify Tracks
-                        </button>
+                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:space-between;">
+                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                            <button class="import-toggle" onclick="toggleImport()">
+                                <span>＋</span> Import Spotify Tracks
+                            </button>
+                            {% if songs and pending == 0 %}
+                            {% set has_errors = songs|selectattr('status','equalto','error')|list|length > 0 %}
+                            {% if has_errors %}
+                            <form action="/retry" method="post" style="margin:0">
+                                <button type="submit" class="import-toggle" style="color:#ffc107; border-color:rgba(255,193,7,0.3);">↻ Retry Failed</button>
+                            </form>
+                            {% endif %}
+                            {% endif %}
+                        </div>
                         {% if songs %}
                         <form action="/clear" method="post" style="margin:0" onsubmit="return confirm('Delete all tracks?')">
                             <button type="submit" class="import-toggle" style="color:#e74c3c; border-color:rgba(231,76,60,0.3);">✕ Clear All</button>
                         </form>
-                        {% endif %}
-                        {% if songs and pending == 0 %}
-                        {% set has_errors = songs|selectattr('status','equalto','error')|list|length > 0 %}
-                        {% if has_errors %}
-                        <form action="/retry" method="post" style="margin:0">
-                            <button type="submit" class="import-toggle" style="color:#ffc107; border-color:rgba(255,193,7,0.3);">↻ Retry Failed</button>
-                        </form>
-                        {% endif %}
                         {% endif %}
                     </div>
                     <div class="import-form" id="importForm">
@@ -99,6 +101,7 @@
                             <div class="song-artist">{{ song.artist or '' }}</div>
                         </div>
                         <button class="song-add-btn" onclick="event.stopPropagation(); showAddToPlaylist({{ song.id }})" title="Add to playlist">＋</button>
+                        <button class="song-del-btn" onclick="event.stopPropagation(); deleteSong({{ song.id }}, this.closest('.song-item'))" title="Delete song">✕</button>
                         <span class="song-status {{ song.status }}">{{ song.status }}</span>
                     </div>
                     {% endfor %}
@@ -516,6 +519,14 @@
                 const cnt = tab.querySelector('.pl-tab-count');
                 if (cnt) cnt.textContent = parseInt(cnt.textContent || 0) + 1;
             }
+        }
+
+        // ── Delete single song ──────────────────────────────────────────
+        async function deleteSong(songId, el) {
+            if (!confirm('Delete this song?')) return;
+            await fetch(`/api/songs/${songId}`, { method: 'DELETE' });
+            el.remove();
+            rebuildPlaylist();
         }
 
         // ── Search / filter ──────────────────────────────────────────────

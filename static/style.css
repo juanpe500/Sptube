@@ -723,4 +723,20 @@ body {
     color: var(--text-muted);
 }
 
+/* ── Song Delete Button ──────────────────────────────────────────── */
+
+.song-del-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 4px;
+    opacity: 0;
+    transition: all var(--transition);
+}
+.song-item:hover .song-del-btn { opacity: 1; }
+.song-del-btn:hover { color: var(--danger); background: rgba(231,76,60,0.15); }
+
 /* # By JP */

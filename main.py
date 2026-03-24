@@ -123,6 +123,12 @@ async def api_songs():
     return {"songs": songs, "pending": pending}
 
 
+@app.delete("/api/songs/{song_id}")
+async def api_delete_song(song_id: int):
+    db.delete_song(song_id)
+    return {"ok": True}
+
+
 @app.get("/api/search-youtube")
 async def api_search_youtube(q: str, song_id: int = None):
     """Search YouTube for a query and return the embed URL + video ID."""

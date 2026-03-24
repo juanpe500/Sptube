@@ -123,6 +123,14 @@ def clear_all_songs():
     conn.close()
 
 
+def delete_song(song_id: int):
+    conn = get_db()
+    conn.execute("DELETE FROM playlist_songs WHERE song_id=?", (song_id,))
+    conn.execute("DELETE FROM songs WHERE id=?", (song_id,))
+    conn.commit()
+    conn.close()
+
+
 def reset_stuck_songs():
     """Reset error/pending songs back to pending for retry."""
     conn = get_db()
