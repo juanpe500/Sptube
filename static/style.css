@@ -680,28 +680,36 @@ body {
 .mode-btn.active { background: var(--green); border-color: var(--green); }
 
 
-/* ── Search Bar ───────────────────────────────────────────────────── */
+/* ── Header Search Bar ────────────────────────────────────────────── */
 
-.search-bar {
+.header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+.header-search {
+    flex: 1;
+    max-width: 420px;
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 12px;
-    margin: 8px 0 4px;
+    padding: 8px 14px;
     background: var(--bg-card);
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    transition: border-color var(--transition);
+    border-radius: 24px;
+    transition: all var(--transition);
 }
-.search-bar:focus-within {
+.header-search:focus-within {
     border-color: var(--green);
-    box-shadow: 0 0 12px var(--green-glow);
+    box-shadow: 0 0 16px var(--green-glow);
+    background: rgba(30, 30, 30, 0.9);
 }
-.search-icon {
-    font-size: 0.9rem;
-    opacity: 0.5;
+.header-search .search-icon {
+    font-size: 0.85rem;
+    opacity: 0.4;
+    flex-shrink: 0;
 }
-.search-bar input {
+.header-search input {
     flex: 1;
     background: none;
     border: none;
@@ -709,8 +717,9 @@ body {
     color: var(--text-primary);
     font-family: inherit;
     font-size: 0.85rem;
+    min-width: 0;
 }
-.search-bar input::placeholder {
+.header-search input::placeholder {
     color: var(--text-muted);
 }
 
